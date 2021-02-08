@@ -10,25 +10,45 @@ import pytz
 import glob
 import os
 import time
+import time, sys
+
+
+
+
 
 
 s3_client = boto3.client('s3')
 dumps = "/Users/HP/Desktop/monitor_me/overdue"
 vid_folder = "/Users/HP/Desktop/monitor_me"
 tz_NG = pytz.timezone('Africa/Lagos')
-video_fmt = [".mp4",".avi",".flv",".mpg4",".webm",".3gp"]
+video_fmt = [".mp4",".avi",".flv",".mpg4",".webm",".3gp",".mp3"]
 upload_status = " "
 threshold_days= 0
 over_threshold_days = 10
 dumping_folder ='overdue'
-target_folder = glob.glob(vid_folder+'/*')
+target_folder = glob.glob('/Users/HP/Desktop/monitor_me/*')
+
+
+def update_progress(job_title, progress):
+    length = 20 # modify this to change the length
+    block = int(round(length*progress))
+    msg = "\r{0}: [{1}] {2}%".format(job_title, "#"*block + "-"*(length-block), round(progress*100, 2))
+    if progress >= 1: msg += " DONE\r\n"
+    sys.stdout.write(msg)
+    sys.stdout.flush()
 
 
 
 def upload_files(file_name, bucket_name, object_name, date_created, date_sent):
-
+    upload_status = "uploading " + object_name + " to the server"
+    print_me(upload_status)
     if object_name is None:
         object_name = file_name
+
+    for i in range(100):
+        time.sleep(0.3)
+        update_progress(upload_status, i/100.0)
+        
     # Main File Uploader
     response = s3_client.upload_file(file_name, bucket_name, object_name, ExtraArgs = {
         'ACL': 'public-read',
@@ -36,7 +56,8 @@ def upload_files(file_name, bucket_name, object_name, date_created, date_sent):
             'creation date': date_created,
             'time-sent': date_sent,
         }})
-    upload_status = "File Uploaded Successfully"
+    update_progress(upload_status, 1)
+    upload_status = object_name + " Uploaded Successfully"
     print_me(upload_status)
 
 
@@ -55,11 +76,9 @@ def load_server():
             time_sent = datetime.now(tz_NG).strftime("%d/%m/%y")
             time_created = (datetime.now(tz_NG) - timedelta(days=20)). strftime("%d/%m/%y")
             # Check File File format, ensure it is in video format
-            while os.path.isfile(each_file) and os.path.splitext(each_file)[-1].lower() in video_fmt:
-                upload_files(each_file,'camsec-futa',each_file+str(time_sent),time_created, time_sent)
-                upload_status = "uploading to the server"
-                print_me(upload_status)
-                print(each_file.rjust(60,"#"))
+            if os.path.isfile(each_file) and os.path.splitext(each_file)[-1].lower() in video_fmt:
+                obj_name = str(each_file).split("\\")[-1]
+                upload_files(each_file,'camsec-futa',obj_name,time_created, time_sent)
 
 def print_me(text):
     print(text.center(100,"*"))
@@ -69,14 +88,14 @@ def print_me(text):
 class TheHandler(FileSystemEventHandler):
     file_name = " "
     def on_created(self, event):
-        print("God Rules")
-        #self.clean_home()
-        #load_server()
-
-    def on_modified(self, event):
         #print("God Rules")
         self.clean_home()
         load_server()
+
+    def on_modified(self, event):
+        #print("God Rules")
+        #self.clean_home()
+        #load_server()
         pass
 
 
@@ -88,10 +107,10 @@ class TheHandler(FileSystemEventHandler):
             # Join file name to path
             each_file_path = vid_folder + "/" + each_file            
             # Check if each file is a file but not folder and also not a shortcut
-            if os.path.isfile(each_file_path):
+            if os.path.isfile(each_file_path) and os.path.splitext(each_file)[-1].lower() in video_fmt:
                 days_spent_on_pc = display_days_spent(present_time, each_file_path)
                 # Only extract those whose days are more than threshold
-                self.move_longstayed_files(each_file, days_spent_on_pc)
+                #self.move_longstayed_files(each_file, days_spent_on_pc)
                 if days_spent_on_pc > threshold_days:
                     try:
                         self.move_longstayed_files(each_file, days_spent_on_pc)
@@ -108,6 +127,7 @@ class TheHandler(FileSystemEventHandler):
                         delete_status = "Error transferring {0}".format(each_file_path)
                     print_me(delete_status)
             # In a case where the content is not a file 
+            
             elif os.path.isdir(each_file_path):
                     days_spent_on_pc = display_days_spent(present_time, each_file_path)
                     folder_name = each_file_path.split("/")[-1]
@@ -129,7 +149,6 @@ class TheHandler(FileSystemEventHandler):
                                 delete_status = "Error transferring {0}".format(each_file_path)
                             
                             print_me(delete_status)
-
 
 
     def move_longstayed_files(self, each_file, expended_days):
