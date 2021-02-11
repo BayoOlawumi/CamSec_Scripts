@@ -1,4 +1,4 @@
-from connectivity_checker import connect
+import urllib.request
 import os
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -9,24 +9,45 @@ from datetime import datetime, timedelta
 import pytz
 import glob
 import os
-import time
 import time, sys
-
-
+from botocore.exceptions import ClientError
 
 
 
 
 s3_client = boto3.client('s3')
-dumps = "/Users/HP/Desktop/monitor_me/overdue"
-vid_folder = "/Users/HP/Desktop/monitor_me"
+dumps = "/Users/BayoOlawumi/Desktop/monitor_me/overdue"
+vid_folder = "/Users/BayoOlawumi/Desktop/monitor_me"
 tz_NG = pytz.timezone('Africa/Lagos')
 video_fmt = [".mp4",".avi",".flv",".mpg4",".webm",".3gp",".mp3"]
 upload_status = " "
 threshold_days= 0
 over_threshold_days = 10
 dumping_folder ='overdue'
-target_folder = glob.glob('/Users/HP/Desktop/monitor_me/*')
+target_folder = glob.glob('/Users/BayoOlawumi/Desktop/monitor_me/*')
+url = 'https://www.aws.com'
+
+
+
+"""
+A function for testing the connectivity
+
+"""
+def connect():
+    try:
+        urllib.request.urlopen(url)
+        return True
+    except:
+        return False
+
+
+def check(s3_client, bucket, key):
+    try:
+        s3_client.head_object(Bucket=bucket, Key=key)
+    except ClientError as e:
+        resp =  int(e.response['Error']['Code']) != 404
+        return False
+    return True
 
 
 def update_progress(job_title, progress):
@@ -40,25 +61,31 @@ def update_progress(job_title, progress):
 
 
 def upload_files(file_name, bucket_name, object_name, date_created, date_sent):
-    upload_status = "uploading " + object_name + " to the server"
-    print_me(upload_status)
+    upload_status = "Uploading " + object_name + " to the server"
+    print_me2(upload_status)
     if object_name is None:
         object_name = file_name
-
-    for i in range(100):
-        time.sleep(0.3)
-        update_progress(upload_status, i/100.0)
         
-    # Main File Uploader
-    response = s3_client.upload_file(file_name, bucket_name, object_name, ExtraArgs = {
-        'ACL': 'public-read',
-        'Metadata':{
-            'creation date': date_created,
-            'time-sent': date_sent,
-        }})
-    update_progress(upload_status, 1)
-    upload_status = object_name + " Uploaded Successfully"
-    print_me(upload_status)
+    # Check existence of file
+
+    existed = check(s3_client, bucket_name,object_name)
+    if existed:
+        upload_status = object_name + " already uploaded >>>>> up to the NEXT"
+        print_me(upload_status)
+    else:
+        for i in range(100):
+            time.sleep(0.1)
+            update_progress(upload_status, i/100.0)
+        # Main File Uploader
+        response = s3_client.upload_file(file_name, bucket_name, object_name, ExtraArgs = {
+            'ACL': 'public-read',
+            'Metadata':{        
+                'creation date': date_created,
+                'time-sent': date_sent,
+            }})
+        update_progress(upload_status, 1)
+        upload_status = object_name + " Uploaded Successfully"
+        print_me(upload_status)
 
 
 
@@ -81,21 +108,22 @@ def load_server():
                 upload_files(each_file,'camsec-futa',obj_name,time_created, time_sent)
 
 def print_me(text):
-    print(text.center(100,"*"))
-
-
+    print(text.center(100,"*"), end="\n")
+def print_me2(text):
+    print(text.center(100,"-"), end="\n\n")
+    
 
 class TheHandler(FileSystemEventHandler):
     file_name = " "
     def on_created(self, event):
         #print("God Rules")
         self.clean_home()
-        load_server()
+        #load_server()
 
     def on_modified(self, event):
         #print("God Rules")
         #self.clean_home()
-        #load_server()
+        load_server()
         pass
 
 
@@ -174,17 +202,20 @@ class TheHandler(FileSystemEventHandler):
                 upload_status = new_name + " was successfully moved to "+ dumping_folder +" folder after spending "+ str(expended_days) + " days!"
                 print_me(upload_status)
 
+if connect():
 
-handler = TheHandler()
-observer = Observer()
-observer.schedule(handler,vid_folder,recursive=True)
-observer.start()
+    handler = TheHandler()
+    observer = Observer()
+    observer.schedule(handler,vid_folder,recursive=True)
+    observer.start()
 
-try:
-    while True:
-        time.sleep(10)
-except KeyboardInterrupt:
-    observer.stop()
+    try:
+        while True:
+            time.sleep(10)
+    except KeyboardInterrupt:
+        observer.stop()
 
-observer.join()
+    observer.join()
+else:
+    print_me("Error connecting to server")
 
